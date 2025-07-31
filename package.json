@@ -1,0 +1,37 @@
+{
+  "name": "poker-helper-be",
+  "version": "1.0.0",
+  "main": "dist/src/main",
+  "scripts": {
+    "build": "nest build",
+    "start:dev": "nest start --watch",
+    "start:prod": "node ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/overlort/poker-helper-be.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/overlort/poker-helper-be/issues"
+  },
+  "homepage": "https://github.com/overlort/poker-helper-be#readme",
+  "description": "",
+  "dependencies": {
+    "@nestjs/common": "^11.1.5",
+    "@nestjs/core": "^11.1.5",
+    "@nestjs/mapped-types": "*",
+    "@nestjs/platform-express": "^11.1.5",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.2",
+    "reflect-metadata": "^0.2.2"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.10",
+    "@nestjs/schematics": "^11.0.7",
+    "@types/node": "^24.1.0",
+    "typescript": "^5.8.3"
+  }
+}
