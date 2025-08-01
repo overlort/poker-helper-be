@@ -5,7 +5,7 @@ import {Card} from "./card.interface";
 @Injectable()
 export class PokerService {
   private readonly rankOrder = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
-  private lastResult: { combination: string; bestCards: Card[] } | null = null;
+  private lastResult: { combination: string; bestCards: string[] } | null = null;
 
   evaluateAndSave(dto: EvaluateHandDto): { combination: string; bestCards: string[] } {
     const cards = dto.cards.map(c => ({
@@ -17,11 +17,11 @@ export class PokerService {
     const best = allFiveCardCombos
       .map(combo => this.classifyHand(combo))
       .sort((a, b) => this.getHandRank(b.name) - this.getHandRank(a.name))[0];
-
-    return {
+    this.lastResult = {
       combination: best.name,
-      bestCards: best.involved.map(c => c.rank + c.suit),
-    };
+      bestCards:best.involved.map(c => c.rank + c.suit),
+    }
+    return this.lastResult
   }
 
   private classifyHand(cards: Card[]): { name: string; involved: Card[] } {
@@ -160,7 +160,7 @@ export class PokerService {
     return result;
   }
 
-  getLastResult(): { combination: string; bestCards: Card[] } | null {
+  getLastResult(): { combination: string; bestCards: string[] } | null {
     return this.lastResult;
   }
 
