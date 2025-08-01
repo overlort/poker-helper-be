@@ -8,8 +8,7 @@ export class PokerController {
 
   @Post('evaluate')
   evaluateHand(@Body() body: EvaluateHandDto) {
-    const { cards } = body;
-    return this.pokerService.evaluateAndSave(cards);
+    return this.pokerService.evaluateAndSave(body);
   }
 
   @Get('winner')

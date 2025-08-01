@@ -1,123 +1,134 @@
 import { Injectable } from '@nestjs/common';
-import { Card, Rank } from './card.interface';
+import { EvaluateHandDto } from './dto/evaluate-hand.dto';
+import {Card} from "./card.interface";
 
 @Injectable()
 export class PokerService {
-  private rankOrder: Rank[] = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+  private readonly rankOrder = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
   private lastResult: { combination: string; bestCards: Card[] } | null = null;
 
-  evaluateAndSave(cards: Card[]): { combination: string; bestCards: Card[] } {
-    if (cards.length < 5 || cards.length > 7) {
-      throw new Error("Hand must have between 5 and 7 cards.");
-    }
+  evaluateAndSave(dto: EvaluateHandDto): { combination: string; bestCards: string[] } {
+    const cards = dto.cards.map(c => ({
+      rank: c.slice(0, -1) as Card['rank'],
+      suit: c.slice(-1) as Card['suit'],
+    }));
 
-    const combinations = this.getAllFiveCardCombos(cards);
-    const rankedHands = combinations.map(combo => {
-      const name = this.classifyHand(combo);
-      return {
-        combo,
-        name,
-        rank: this.getHandRank(name),
-      };
-    });
+    const allFiveCardCombos = this.getCombinations(cards, 5);
+    const best = allFiveCardCombos
+      .map(combo => this.classifyHand(combo))
+      .sort((a, b) => this.getHandRank(b.name) - this.getHandRank(a.name))[0];
 
-    rankedHands.sort((a, b) => b.rank - a.rank);
-    const best = rankedHands[0];
-
-    this.lastResult = {
+    return {
       combination: best.name,
-      bestCards: best.combo,
+      bestCards: best.involved.map(c => c.rank + c.suit),
     };
-
-    return this.lastResult;
   }
 
-  getLastResult(): { combination: string; bestCards: Card[] } | null {
-    return this.lastResult;
-  }
-
-  private getAllFiveCardCombos(cards: Card[]): Card[][] {
-    const result: Card[][] = [];
-    const combine = (start: number, path: Card[]) => {
-      if (path.length === 5) {
-        result.push([...path]);
-        return;
-      }
-      for (let i = start; i < cards.length; i++) {
-        path.push(cards[i]);
-        combine(i + 1, path);
-        path.pop();
-      }
-    };
-    combine(0, []);
-    return result;
-  }
-
-  private getRankValue(rank: Rank): number {
-    return this.rankOrder.indexOf(rank);
-  }
-
-  private classifyHand(cards: Card[]): string {
-    const counts: Record<string, number> = {};
+  private classifyHand(cards: Card[]): { name: string; involved: Card[] } {
     const suits: Record<string, Card[]> = {};
-    const values: number[] = [];
+    const ranks: Record<string, Card[]> = {};
 
-    for (let card of cards) {
-      counts[card.rank] = (counts[card.rank] || 0) + 1;
-      suits[card.suit] = suits[card.suit] || [];
+    for (const card of cards) {
+      if (!suits[card.suit]) suits[card.suit] = [];
       suits[card.suit].push(card);
-      values.push(this.getRankValue(card.rank));
+
+      if (!ranks[card.rank]) ranks[card.rank] = [];
+      ranks[card.rank].push(card);
     }
 
-    values.sort((a, b) => a - b);
-    const isFlush = Object.values(suits).some(suitCards => suitCards.length >= 5);
-    const isStraight = this.checkStraight(values);
     const flushCards = Object.values(suits).find(s => s.length >= 5);
+    const hasFlush = !!flushCards;
 
-    if (isFlush && flushCards) {
-      const flushValues = flushCards.map(card => this.getRankValue(card.rank)).sort((a, b) => a - b);
-      if (this.checkStraight(flushValues)) {
-        if (flushValues.includes(8) && flushValues.includes(9) && flushValues.includes(10) &&
-          flushValues.includes(11) && flushValues.includes(12)) {
-          return 'Royal Flush';
-        }
-        return 'Straight Flush';
+    const getRankIndex = (card: Card) => this.rankOrder.indexOf(card.rank);
+    const sortedByRank = [...cards].sort((a, b) => getRankIndex(b) - getRankIndex(a));
+    const straight = this.getStraight(sortedByRank);
+
+    if (hasFlush) {
+      const flushSorted = [...flushCards].sort((a, b) => getRankIndex(b) - getRankIndex(a));
+      const straightFlush = this.getStraight(flushSorted);
+      if (straightFlush) {
+        const isRoyal = straightFlush.every(c => ['10', 'J', 'Q', 'K', 'A'].includes(c.rank));
+        return {
+          name: isRoyal ? 'Royal Flush' : 'Straight Flush',
+          involved: straightFlush,
+        };
       }
     }
 
-    const countValues = Object.values(counts);
-    if (countValues.includes(4)) return 'Four of a Kind';
-    if (countValues.includes(3) && countValues.includes(2)) return 'Full House';
-    if (isFlush) return 'Flush';
-    if (isStraight) return 'Straight';
-    if (countValues.includes(3)) return 'Three of a Kind';
-    if (countValues.filter(v => v === 2).length >= 2) return 'Two Pair';
-    if (countValues.includes(2)) return 'One Pair';
+    const four = Object.values(ranks).find(g => g.length === 4);
+    if (four) {
+      const kickers = sortedByRank.filter(c => !four.includes(c)).slice(0, 1);
+      return { name: 'Four of a Kind', involved: [...four, ...kickers] };
+    }
 
-    return 'High Card';
+    const threes = Object.values(ranks).filter(g => g.length === 3).sort((a, b) => getRankIndex(b[0]) - getRankIndex(a[0]));
+    const pairs = Object.values(ranks).filter(g => g.length === 2).sort((a, b) => getRankIndex(b[0]) - getRankIndex(a[0]));
+
+    if (threes.length >= 1 && (pairs.length >= 1 || threes.length >= 2)) {
+      const three = threes[0];
+      const pair = pairs[0] || threes[1].slice(0, 2);
+      return { name: 'Full House', involved: [...three, ...pair] };
+    }
+
+    if (hasFlush) {
+      const topFlush = [...flushCards]
+        .sort((a, b) => getRankIndex(b) - getRankIndex(a))
+        .slice(0, 5);
+      return { name: 'Flush', involved: topFlush };
+    }
+
+    if (straight) {
+      return { name: 'Straight', involved: straight };
+    }
+
+    if (threes.length >= 1) {
+      const three = threes[0];
+      const kickers = sortedByRank.filter(c => !three.includes(c)).slice(0, 2);
+      return { name: 'Three of a Kind', involved: [...three, ...kickers] };
+    }
+
+    if (pairs.length >= 2) {
+      const [p1, p2] = pairs;
+      const kickers = sortedByRank.filter(c => !p1.includes(c) && !p2.includes(c)).slice(0, 1);
+      return { name: 'Two Pair', involved: [...p1, ...p2, ...kickers] };
+    }
+
+    if (pairs.length >= 1) {
+      const pair = pairs[0];
+      const kickers = sortedByRank.filter(c => !pair.includes(c)).slice(0, 3);
+      return { name: 'One Pair', involved: [...pair, ...kickers] };
+    }
+
+    return { name: 'High Card', involved: sortedByRank.slice(0, 5) };
   }
 
-  private checkStraight(values: number[]): boolean {
-    const set = new Set(values);
-    const unique = Array.from(set).sort((a, b) => a - b);
-
-    if (set.has(12) && set.has(0) && set.has(1) && set.has(2) && set.has(3)) {
-      return true;
+  private getStraight(cards: Card[]): Card[] | null {
+    const seen: Record<string, Card> = {};
+    for (const card of cards) {
+      if (!seen[card.rank]) seen[card.rank] = card;
     }
 
-    for (let i = 0; i <= unique.length - 5; i++) {
-      if (
-        unique[i + 4] - unique[i] === 4 &&
-        new Set(unique.slice(i, i + 5)).size === 5
-      ) {
-        return true;
+    const uniqueRanks = Object.keys(seen);
+    const indexes = uniqueRanks.map(r => this.rankOrder.indexOf(r)).sort((a, b) => b - a);
+
+    for (let i = 0; i <= indexes.length - 5; i++) {
+      const slice = indexes.slice(i, i + 5);
+      const isSequential = slice.every((val, idx, arr) => idx === 0 || arr[idx - 1] - val === 1);
+      if (isSequential) {
+        return slice.map(index => seen[this.rankOrder[index]]);
       }
     }
-    return false;
+
+    const lowStraight = ['A', '2', '3', '4', '5'];
+    if (lowStraight.every(r => seen[r])) {
+      return lowStraight.map(r => seen[r]);
+    }
+
+    return null;
   }
 
   private getHandRank(name: string): number {
-    const ranks = [
+    const ranking = [
       'High Card',
       'One Pair',
       'Two Pair',
@@ -129,7 +140,28 @@ export class PokerService {
       'Straight Flush',
       'Royal Flush',
     ];
-    return ranks.indexOf(name);
+    return ranking.indexOf(name);
+  }
+
+  private getCombinations<T>(arr: T[], k: number): T[][] {
+    const result: T[][] = [];
+    const combine = (start: number, combo: T[]) => {
+      if (combo.length === k) {
+        result.push([...combo]);
+        return;
+      }
+      for (let i = start; i < arr.length; i++) {
+        combo.push(arr[i]);
+        combine(i + 1, combo);
+        combo.pop();
+      }
+    };
+    combine(0, []);
+    return result;
+  }
+
+  getLastResult(): { combination: string; bestCards: Card[] } | null {
+    return this.lastResult;
   }
 
   clearLastResult(): void {
